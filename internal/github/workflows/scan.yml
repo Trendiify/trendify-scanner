@@ -1,0 +1,64 @@
+name: Trendify Nexus Scanner
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "*/30 * * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan Cloudflare Endpoints
+    runs-on: ubuntu-latest
+
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+
+      - name: Download dependencies
+        run: |
+          go mod download
+
+      - name: Build scanner
+        run: |
+          go build -o trendify-scanner ./cmd/scanner
+
+      - name: Run scanner
+        env:
+          TRENDIFY_VLESS_URL: ${{ secrets.TRENDIFY_VLESS_URL }}
+          TRENDIFY_IP_COUNT: "1000"
+          TRENDIFY_WORKERS: "100"
+          TRENDIFY_TIMEOUT: "5"
+          TRENDIFY_TOP: "10"
+          TRENDIFY_OUTPUT: "results.json"
+        run: |
+          ./trendify-scanner
+
+      - name: Show results
+        if: always()
+        run: |
+          if [ -f results.json ]; then
+            cat results.json
+          else
+            echo "results.json was not created"
+          fi
+
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trendify-nexus-scan-results
+          path: results.json
+          if-no-files-found: warn
+          retention-days: 7
