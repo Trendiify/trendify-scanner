@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -14,210 +13,212 @@ import (
 	"trendify-scanner/internal/result"
 )
 
+type Output struct {
+	GeneratedAt string `json:"generated_at"`
+
+	Gateway string `json:"gateway"`
+
+	Source string `json:"source"`
+
+	ConfigName string `json:"config_name"`
+
+	TotalScanned int `json:"total_scanned"`
+
+	HealthyCount int `json:"healthy_count"`
+
+	SelectedCount int `json:"selected_count"`
+
+	Template VLESS template `json:"template"`
+
+	Results interface{} `json:"results"`
+}
+
+type VLESS struct {
+	Host string `json:"host"`
+	SNI  string `json:"sni"`
+	Port int    `json:"port"`
+	Type string `json:"type"`
+	Security string `json:"security"`
+	Path string `json:"path"`
+}
+
 func main() {
+
+	fmt.Println()
+	fmt.Println("======================================")
+	fmt.Println("       TRENDIFY NEXUS SCANNER")
+	fmt.Println("======================================")
+	fmt.Println()
+
 	cfg := config.Load()
 
 	if cfg.VLESSURL == "" {
-		log.Fatal(
-			"TRENDIFY_VLESS_URL is not set",
-		)
+		fmt.Println("ERROR:")
+		fmt.Println("TRENDIFY_VLESS_URL is not configured.")
+		fmt.Println()
+		fmt.Println("Set your VLESS configuration first.")
+		os.Exit(1)
 	}
-
-	fmt.Println("========================================")
-	fmt.Println("       Trendify Nexus Scanner")
-	fmt.Println("========================================")
-	fmt.Println()
 
 	fmt.Println("[1/5] Parsing VLESS configuration...")
 
-	vless, err := parser.Parse(cfg.VLESSURL)
+	vless, err := parser.Parse(
+		cfg.VLESSURL,
+	)
+
 	if err != nil {
-		log.Fatalf(
-			"VLESS configuration error: %v",
-			err,
-		)
+		fmt.Println("VLESS parse error:", err)
+		os.Exit(1)
 	}
 
-	fmt.Printf(
-		"Server: %s:%d\n",
-		vless.Address,
-		vless.Port,
-	)
-
-	fmt.Printf(
-		"SNI: %s\n",
-		vless.SNI,
-	)
-
-	fmt.Printf(
-		"Host: %s\n",
-		vless.Host,
-	)
-
-	fmt.Printf(
-		"Path: %s\n",
-		vless.Path,
-	)
-
-	fmt.Printf(
-		"Network: %s\n",
-		vless.Network,
-	)
-
-	fmt.Printf(
-		"Security: %s\n",
-		vless.Security,
-	)
-
-	fmt.Println()
-
-	fmt.Println("[2/5] Loading Cloudflare IPv4 ranges...")
-
-	source, err := ipsrc.LoadCloudflareIPv4()
-	if err != nil {
-		log.Fatalf(
-			"Cloudflare IP source error: %v",
-			err,
-		)
-	}
-
-	fmt.Printf(
-		"Cloudflare ranges: %d\n",
-		len(source.CIDRs),
-	)
-
+	fmt.Println("      Address :", vless.Address)
+	fmt.Println("      Port    :", vless.Port)
+	fmt.Println("      Network :", vless.Network)
+	fmt.Println("      Security:", vless.Security)
+	fmt.Println("      SNI     :", vless.SNI)
+	fmt.Println("      Host    :", vless.Host)
+	fmt.Println("      Path    :", vless.Path)
 	fmt.Println()
 
 	fmt.Printf(
-		"[3/5] Generating %d candidate IPs...\n",
+		"[2/5] Generating %d Cloudflare IPs...\n",
 		cfg.IPCount,
 	)
 
-	ips, err := source.Generate(cfg.IPCount)
+	ips, err := ipsrc.Generate(
+		cfg.IPCount,
+	)
+
 	if err != nil {
-		log.Fatalf(
-			"IP generation error: %v",
-			err,
-		)
+		fmt.Println("IP generation error:", err)
+		os.Exit(1)
 	}
 
 	fmt.Printf(
-		"Candidate IPs: %d\n",
+		"      Generated: %d IPs\n",
 		len(ips),
 	)
 
 	fmt.Println()
-
-	fmt.Printf(
-		"[4/5] Scanning with %d workers...\n",
-		cfg.Workers,
-	)
-
-	start := time.Now()
+	fmt.Println("[3/5] Starting endpoint validation...")
 
 	scanner := engine.New(
 		cfg.Workers,
 		cfg.Timeout,
 	)
 
+	start := time.Now()
+
 	results := scanner.Scan(
 		ips,
 		vless,
 	)
 
-	elapsed := time.Since(start)
-
-	healthyCount := 0
-
-	for _, r := range results {
-		if r.Healthy {
-			healthyCount++
-		}
-	}
-
 	fmt.Printf(
-		"Scan completed in %s\n",
-		elapsed.Round(time.Millisecond),
-	)
-
-	fmt.Printf(
-		"Healthy endpoints: %d\n",
-		healthyCount,
+		"      Scan finished in %s\n",
+		time.Since(start).Round(time.Millisecond),
 	)
 
 	fmt.Println()
+	fmt.Println("[4/5] Ranking healthy endpoints...")
 
-	fmt.Printf(
-		"[5/5] Selecting Top %d endpoints...\n",
-		cfg.TopCount,
-	)
+	ranked := result.Rank(results)
 
-	top := result.Rank(
-		results,
+	top := result.Top(
+		ranked,
 		cfg.TopCount,
 	)
 
 	fmt.Printf(
-		"Selected endpoints: %d\n",
+		"      Healthy: %d\n",
+		len(ranked),
+	)
+
+	fmt.Printf(
+		"      Selected: %d\n",
 		len(top),
 	)
 
 	fmt.Println()
 
-	for i, r := range top {
+	for i, item := range top {
+
 		fmt.Printf(
-			"#%d  %s:%d  latency=%dms  status=%d\n",
+			"%02d  %-15s  %4d ms  TLS=%v  WS=%v  HTTP=%d\n",
 			i+1,
-			r.IP,
-			r.Port,
-			r.Latency,
-			r.StatusCode,
+			item.IP,
+			item.Latency,
+			item.TLS,
+			item.WebSocket,
+			item.StatusCode,
 		)
 	}
 
-	if err := writeResults(
-		cfg.OutputFile,
-		top,
-	); err != nil {
-		log.Fatalf(
-			"write results: %v",
-			err,
-		)
-	}
+output := Output{
+	GeneratedAt: time.Now().
+		UTC().
+		Format(time.RFC3339),
 
-	fmt.Println()
+	Gateway: vless.Address,
 
-	fmt.Printf(
-		"Results written to: %s\n",
-		cfg.OutputFile,
-	)
+	Source: "cloudflare",
 
-	fmt.Println("Scanner finished successfully.")
+	ConfigName: vless.Name,
+
+	TotalScanned: len(results),
+
+	HealthyCount: len(ranked),
+
+	SelectedCount: len(top),
+
+	Template: VLESS{
+		Host: vless.Host,
+		SNI: vless.SNI,
+		Port: vless.Port,
+		Type: vless.Network,
+		Security: vless.Security,
+		Path: vless.Path,
+	},
+
+	Results: top,
 }
 
-func writeResults(
-	filename string,
-	data interface{},
-) error {
-
-	jsonData, err := json.MarshalIndent(
-		data,
+	data, err := json.MarshalIndent(
+		output,
 		"",
 		"  ",
 	)
 
 	if err != nil {
-		return err
+		fmt.Println("JSON error:", err)
+		os.Exit(1)
 	}
 
-	jsonData = append(
-		jsonData,
-		'\n',
-	)
+	fmt.Println()
+	fmt.Println("[5/5] Writing results...")
 
-	return os.WriteFile(
-		filename,
-		jsonData,
+	if err := os.WriteFile(
+		cfg.OutputFile,
+		data,
 		0644,
+	); err != nil {
+
+		fmt.Println(
+			"Write error:",
+			err,
+		)
+
+		os.Exit(1)
+	}
+
+	fmt.Println()
+	fmt.Println("======================================")
+	fmt.Println("SCAN COMPLETED")
+	fmt.Println("======================================")
+	fmt.Println()
+	fmt.Println(
+		"Output:",
+		cfg.OutputFile,
 	)
+	fmt.Println()
 }
