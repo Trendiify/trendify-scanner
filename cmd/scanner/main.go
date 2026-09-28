@@ -28,18 +28,18 @@ type Output struct {
 
 	SelectedCount int `json:"selected_count"`
 
-	Template VLESS template `json:"template"`
+	Template VLESSTemplate `json:"template"`
 
 	Results interface{} `json:"results"`
 }
 
-type VLESS struct {
-	Host string `json:"host"`
-	SNI  string `json:"sni"`
-	Port int    `json:"port"`
-	Type string `json:"type"`
+type VLESSTemplate struct {
+	Host     string `json:"host"`
+	SNI      string `json:"sni"`
+	Port     int    `json:"port"`
+	Type     string `json:"type"`
 	Security string `json:"security"`
-	Path string `json:"path"`
+	Path     string `json:"path"`
 }
 
 func main() {
@@ -171,14 +171,14 @@ output := Output{
 
 	SelectedCount: len(top),
 
-	Template: VLESS{
-		Host: vless.Host,
-		SNI: vless.SNI,
-		Port: vless.Port,
-		Type: vless.Network,
-		Security: vless.Security,
-		Path: vless.Path,
-	},
+Template: VLESSTemplate{
+	Host:     vless.Host,
+	SNI:      vless.SNI,
+	Port:     vless.Port,
+	Type:     vless.Network,
+	Security: vless.Security,
+	Path:     vless.Path,
+},
 
 	Results: top,
 }
