@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+        "trendify-scanner/internal/pool"
 	"trendify-scanner/internal/config"
 	"trendify-scanner/internal/engine"
 	"trendify-scanner/internal/ipsrc"
@@ -85,21 +86,21 @@ func main() {
 		cfg.IPCount,
 	)
 
-source, err := ipsrc.LoadCloudflareIPv4()
+	source, err := ipsrc.LoadCloudflareIPv4()
 
-if err != nil {
-	fmt.Println("Cloudflare IP source error:", err)
-	os.Exit(1)
-}
+	if err != nil {
+		fmt.Println("Cloudflare IP source error:", err)
+		os.Exit(1)
+	}
 
-ips, err := source.Generate(
-	cfg.IPCount,
-)
+	ips, err := source.Generate(
+		cfg.IPCount,
+	)
 
-if err != nil {
-	fmt.Println("IP generation error:", err)
-	os.Exit(1)
-}
+	if err != nil {
+		fmt.Println("IP generation error:", err)
+		os.Exit(1)
+	}
 
 	fmt.Printf(
 		"      Generated: %d IPs\n",
@@ -161,34 +162,34 @@ if err != nil {
 		)
 	}
 
-output := Output{
-	GeneratedAt: time.Now().
-		UTC().
-		Format(time.RFC3339),
+	output := Output{
+		GeneratedAt: time.Now().
+			UTC().
+			Format(time.RFC3339),
 
-	Gateway: vless.Address,
+		Gateway: vless.Address,
 
-	Source: "cloudflare",
+		Source: "cloudflare",
 
-	ConfigName: vless.Name,
+		ConfigName: vless.Name,
 
-	TotalScanned: len(results),
+		TotalScanned: len(results),
 
-	HealthyCount: len(ranked),
+		HealthyCount: len(ranked),
 
-	SelectedCount: len(top),
+		SelectedCount: len(top),
 
-Template: VLESSTemplate{
-	Host:     vless.Host,
-	SNI:      vless.SNI,
-	Port:     vless.Port,
-	Type:     vless.Network,
-	Security: vless.Security,
-	Path:     vless.Path,
-},
+		Template: VLESSTemplate{
+			Host:     vless.Host,
+			SNI:      vless.SNI,
+			Port:     vless.Port,
+			Type:     vless.Network,
+			Security: vless.Security,
+			Path:     vless.Path,
+		},
 
-	Results: top,
-}
+		Results: top,
+	}
 
 	data, err := json.MarshalIndent(
 		output,
@@ -228,4 +229,25 @@ Template: VLESSTemplate{
 		cfg.OutputFile,
 	)
 	fmt.Println()
+fmt.Println("[6/6] Building IP Pool...")
+
+err = pool.Build(
+	vless.Address,
+	top,
+	cfg.TopCount,
+	"pool.json",
+)
+
+if err != nil {
+	fmt.Println(
+		"Pool build error:",
+		err,
+	)
+	os.Exit(1)
 }
+
+fmt.Println(
+	"Pool output: pool.json",
+)
+}
+
