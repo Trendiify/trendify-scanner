@@ -6,70 +6,89 @@ import (
 	"trendify-scanner/internal/prober"
 )
 
-func Rank(
-	results []prober.Result,
-	topCount int,
+func Healthy(
+	input []prober.Result,
 ) []prober.Result {
 
-	if topCount <= 0 {
-		topCount = 10
-	}
-
-	healthy := make(
+	output := make(
 		[]prober.Result,
 		0,
-		len(results),
+		len(input),
 	)
 
-	for _, r := range results {
-		if !r.Healthy {
+	for _, item := range input {
+		if !item.Healthy {
 			continue
 		}
 
-		healthy = append(
-			healthy,
-			r,
+		output = append(
+			output,
+			item,
 		)
 	}
 
+	return output
+}
+
+func Rank(
+	input []prober.Result,
+) []prober.Result {
+
+	output := Healthy(input)
+
 	sort.Slice(
-		healthy,
+		output,
 		func(i, j int) bool {
-			return score(healthy[i]) > score(healthy[j])
+			return score(output[i]) >
+				score(output[j])
 		},
 	)
 
-	if len(healthy) > topCount {
-		healthy = healthy[:topCount]
-	}
-
-	return healthy
+	return output
 }
 
-func score(r prober.Result) float64 {
-	if !r.Healthy {
-		return 0
+func Top(
+	input []prober.Result,
+	count int,
+) []prober.Result {
+
+	if count <= 0 {
+		return []prober.Result{}
 	}
 
-	latency := float64(r.Latency)
+	if len(input) <= count {
+		return input
+	}
+
+	return input[:count]
+}
+
+func score(item prober.Result) int64 {
+	var score int64
+
+	if item.Healthy {
+		score += 100000
+	}
+
+	if item.WebSocket {
+		score += 50000
+	}
+
+	if item.TLS {
+		score += 25000
+	}
+
+	if item.StatusCode == 101 {
+		score += 25000
+	}
+
+	latency := item.Latency
 
 	if latency <= 0 {
-		latency = 1
+		latency = 999999
 	}
 
-	score := 100000.0 / latency
-
-	if r.TCP {
-		score += 100
-	}
-
-	if r.TLS {
-		score += 200
-	}
-
-	if r.WebSocket {
-		score += 500
-	}
+	score -= latency * 10
 
 	return score
 }
