@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -13,23 +14,15 @@ import (
 )
 
 type Result struct {
-	IP string `json:"ip"`
-
-	Port int `json:"port"`
-
-	Latency int64 `json:"latency_ms"`
-
-	TCP bool `json:"tcp"`
-
-	TLS bool `json:"tls"`
-
-	WebSocket bool `json:"websocket"`
-
-	Healthy bool `json:"healthy"`
-
-	StatusCode int `json:"status_code"`
-
-	Error string `json:"error,omitempty"`
+	IP         string `json:"ip"`
+	Port       int    `json:"port"`
+	Latency    int64  `json:"latency_ms"`
+	TCP        bool   `json:"tcp"`
+	TLS        bool   `json:"tls"`
+	WebSocket  bool   `json:"websocket"`
+	Healthy    bool   `json:"healthy"`
+	StatusCode int    `json:"status_code"`
+	Error      string `json:"error,omitempty"`
 }
 
 func Probe(
@@ -37,7 +30,6 @@ func Probe(
 	cfg *parser.VLESSConfig,
 	timeout time.Duration,
 ) Result {
-
 	result := Result{
 		IP:   ip,
 		Port: cfg.Port,
@@ -64,25 +56,11 @@ func Probe(
 	)
 
 	if err != nil {
-		result.Error = fmt.Sprintf(
-			"tcp: %v",
-			err,
-		)
-
+		result.Error = "tcp: " + err.Error()
 		return result
 	}
 
 	result.TCP = true
-
-	if cfg.Security != "tls" &&
-		cfg.Security != "reality" {
-
-		result.Error = "unsupported security for TLS probe"
-
-		_ = conn.Close()
-
-		return result
-	}
 
 	serverName := cfg.SNI
 
@@ -103,18 +81,17 @@ func Probe(
 		},
 	)
 
-	_ = tlsConn.SetDeadline(
+	defer tlsConn.Close()
+
+	if err := tlsConn.SetDeadline(
 		time.Now().Add(timeout),
-	)
+	); err != nil {
+		result.Error = "tls deadline: " + err.Error()
+		return result
+	}
 
 	if err := tlsConn.Handshake(); err != nil {
-		result.Error = fmt.Sprintf(
-			"tls: %v",
-			err,
-		)
-
-		_ = tlsConn.Close()
-
+		result.Error = "tls: " + err.Error()
 		return result
 	}
 
@@ -140,21 +117,16 @@ func Probe(
 		host = cfg.Address
 	}
 
+	requestURL := urlForWS(path)
+
 	req := &http.Request{
-		Method: http.MethodGet,
-
-		URL: &urlValue{
-			path: path,
-		},
-
-		Host: host,
-
-		Proto: "HTTP/1.1",
-
+		Method:     http.MethodGet,
+		URL:        &requestURL,
+		Host:       host,
+		Proto:      "HTTP/1.1",
 		ProtoMajor: 1,
 		ProtoMinor: 1,
-
-		Header: make(http.Header),
+		Header:     make(http.Header),
 	}
 
 	req.Header.Set(
@@ -188,13 +160,7 @@ func Probe(
 	)
 
 	if err := req.Write(tlsConn); err != nil {
-		result.Error = fmt.Sprintf(
-			"websocket request: %v",
-			err,
-		)
-
-		_ = tlsConn.Close()
-
+		result.Error = "websocket request: " + err.Error()
 		return result
 	}
 
@@ -206,27 +172,18 @@ func Probe(
 	)
 
 	if err != nil {
-		result.Error = fmt.Sprintf(
-			"websocket response: %v",
-			err,
-		)
-
-		_ = tlsConn.Close()
-
+		result.Error = "websocket response: " + err.Error()
 		return result
 	}
 
+	defer response.Body.Close()
+
 	result.StatusCode = response.StatusCode
-
-	_ = response.Body.Close()
-	_ = tlsConn.Close()
-
 	result.Latency = time.Since(start).Milliseconds()
 
 	if response.StatusCode == http.StatusSwitchingProtocols {
 		result.WebSocket = true
 		result.Healthy = true
-
 		return result
 	}
 
@@ -238,14 +195,9 @@ func Probe(
 	return result
 }
 
-type urlValue struct {
-	path string
-}
-
-func (u *urlValue) String() string {
-	if u == nil || u.path == "" {
-		return "/"
+func urlForWS(path string) url.URL {
+	return url.URL{
+		Scheme: "https",
+		Path:   path,
 	}
-
-	return u.path
 }
