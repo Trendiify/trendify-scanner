@@ -85,14 +85,21 @@ func main() {
 		cfg.IPCount,
 	)
 
-	ips, err := ipsrc.Generate(
-		cfg.IPCount,
-	)
+source, err := ipsrc.LoadCloudflareIPv4()
 
-	if err != nil {
-		fmt.Println("IP generation error:", err)
-		os.Exit(1)
-	}
+if err != nil {
+	fmt.Println("Cloudflare IP source error:", err)
+	os.Exit(1)
+}
+
+ips, err := source.Generate(
+	cfg.IPCount,
+)
+
+if err != nil {
+	fmt.Println("IP generation error:", err)
+	os.Exit(1)
+}
 
 	fmt.Printf(
 		"      Generated: %d IPs\n",
